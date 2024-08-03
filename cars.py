@@ -91,7 +91,7 @@ class Car:
             ) % 360
 
         self.move_angle = self.angle
-        
+
         # if not self.handbrake:
         #     self.move_angle = self.angle
 
@@ -142,11 +142,14 @@ class Fuel:
 
 
 class CarEnv:
-    def __init__(self):
+    def __init__(self, seed=None):
         pygame.init()
         screen_resolution = (800, 600)
         self.screen = pygame.display.set_mode(screen_resolution)
         self.clock = pygame.time.Clock()
+
+        if seed:
+            random.seed(seed)
 
         self.car = Car(
             screen_width=screen_resolution[0],
@@ -239,30 +242,34 @@ class CarEnv:
         pygame.display.flip()
         self.clock.tick(60)
 
+    def reset(self):
+        self.done = False
+        self.car = Car(
+            screen_width=800,
+            screen_height=600,
+            screen=self.screen,
+            car_path=os.path.join("assets", "sprites", "car.png"),
+        )
+        self.fuel = Fuel(
+            screen_width=800,
+            screen_height=600,
+            screen=self.screen,
+            fuel_path=os.path.join("assets", "sprites", "fuel.png"),
+        )
+        return self._get_obs()
+
 
 env = CarEnv()
 done = False
-action = np.array([0, 0, 0])
-
 score = 0
+obs = env.reset()
 
 while not done:
-    events = pygame.event.get() or [pygame.event.Event(pygame.NOEVENT)]
-
-    for event in events:
-        if event.type == pygame.QUIT:
-            done = True
-        else:
-            action = helpers.translate_human_input(event, previous_action=action)
-
-            observation, reward, terminated, info = env.step(action)
-            env.render()
-
-            score += reward
-            print("Score: ", score)
-
-            if terminated:
-                done = True
+    action = env.action_space.sample()
+    obs, reward, done, info = env.step(action)
+    env.render()
+    score += reward
+    print("Score: ", score)
 
 pygame.quit()
 sys.exit()
