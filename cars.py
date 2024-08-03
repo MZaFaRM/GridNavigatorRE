@@ -44,7 +44,7 @@ class Car:
         self.reverse = False
         self.left = False
         self.right = False
-        self.handbrake = False
+        # self.handbrake = False
         self.fuel_balance = 200
 
         self.memory = [self.car_rect.center]
@@ -69,7 +69,12 @@ class Car:
             self.speed += self.friction
 
         if self.handbrake:
-            self.speed *= 0.9
+            if -0.05 < self.speed < 0.05:
+                self.speed = 0
+            elif self.speed > 0:
+                self.speed -= 0.6
+            elif self.speed < 0:
+                self.speed += 0.6
 
         if self.speed > self.max_speed:
             self.speed = self.max_speed
@@ -85,8 +90,10 @@ class Car:
                 self.angle - (self.handling * (self.speed / self.max_speed))
             ) % 360
 
-        if not self.handbrake:
-            self.move_angle = self.angle
+        self.move_angle = self.angle
+        
+        # if not self.handbrake:
+        #     self.move_angle = self.angle
 
         if self.speed < 0.05 and self.speed > -0.05:
             self.speed = 0
@@ -237,6 +244,8 @@ env = CarEnv()
 done = False
 action = np.array([0, 0, 0])
 
+score = 0
+
 while not done:
     events = pygame.event.get() or [pygame.event.Event(pygame.NOEVENT)]
 
@@ -249,7 +258,8 @@ while not done:
             observation, reward, terminated, info = env.step(action)
             env.render()
 
-            print(info)
+            score += reward
+            print("Score: ", score)
 
             if terminated:
                 done = True
