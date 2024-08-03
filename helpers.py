@@ -1,3 +1,4 @@
+import numpy as np
 import pygame
 
 
@@ -26,3 +27,33 @@ def distance_between_points(a, b):
     x1, y1 = a
     x2, y2 = b
     return ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+
+
+def translate_human_input(event):
+    action = np.array([0, 0, 0])
+
+    if event.type == pygame.KEYDOWN:
+        if event.key == pygame.K_d:
+            action[0] = 1
+        elif event.key == pygame.K_a:
+            action[0] = -1
+        elif event.key == pygame.K_w:
+            action[1] = 1
+        elif event.key == pygame.K_s:
+            action[1] = -1
+        elif event.key == pygame.K_LSHIFT:
+            action[2] = 1
+
+    elif event.type == pygame.KEYUP:
+        if event.key == pygame.K_d:
+            action[0] = 0
+        elif event.key == pygame.K_a:
+            action[0] = 0
+        elif event.key == pygame.K_w:
+            action[1] = 0
+        elif event.key == pygame.K_s:
+            action[1] = 0
+        elif event.key == pygame.K_LSHIFT:
+            action[2] = 0
+
+    return action

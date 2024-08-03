@@ -4,6 +4,7 @@ import sys
 import math
 import helpers
 import random
+from gymnasium.spaces import Box
 
 
 class Car:
@@ -33,6 +34,7 @@ class Car:
         self.angle = 0
         self.move_angle = 0
 
+        self.default_handling = handling
         self.handling = handling
         self.max_speed = max_speed
         self.friction = friction
@@ -152,34 +154,38 @@ class CarEnv:
             fuel_path=os.path.join("assets", "sprites", "fuel.png"),
         )
 
+        self.action_space = Box(-1, 1, shape=(3,), dtype=int)
+        self.observation_space = Box(0, 255, shape=(*screen_resolution, 3), dtype=int)
+
         self.done = False
 
     def step(self, action):
-        if action.type == pygame.KEYDOWN:
-            if action.key == pygame.K_d:
-                self.car.right = True
-            elif action.key == pygame.K_a:
-                self.car.left = True
-            elif action.key == pygame.K_w:
-                self.car.accelerate = True
-            elif action.key == pygame.K_s:
-                self.car.reverse = True
-            elif action.key == pygame.K_LSHIFT:
-                self.car.handbrake = True
-                self.car.handling *= 2
+        # Left or Right
+        if action[0] == 1:
+            self.car.right = True
+        elif action[0] == -1:
+            self.car.left = True
+        else:
+            self.car.right = False
+            self.car.left = False
 
-        elif action.type == pygame.KEYUP:
-            if action.key == pygame.K_d:
-                self.car.right = False
-            elif action.key == pygame.K_a:
-                self.car.left = False
-            elif action.key == pygame.K_w:
-                self.car.accelerate = False
-            elif action.key == pygame.K_s:
-                self.car.reverse = False
-            elif action.key == pygame.K_LSHIFT:
-                self.car.handbrake = False
-                self.car.handling /= 2
+        # Accelerate or Reverse
+        if action[1] == 1:
+            self.car.accelerate = True
+        elif action[1] == -1:
+            self.car.reverse = True
+        else:
+            self.car.accelerate = False
+            self.car.reverse = False
+
+        # Handbrakes
+        if action[2] == 1:
+            self.car.handling *= 2
+            self.car.handbrake = True
+        else:
+            self.car.handbrake = False
+            # if handbrake is pressed, double the handling
+            self.car.handling = self.car.default_handling
 
         self.car.update()
         reward = self.car.get_reward()
@@ -236,11 +242,11 @@ while not done:
         if event.type == pygame.QUIT:
             done = True
         else:
-            observation, reward, terminated, info = env.step(event)
+            action = helpers.translate_human_input(event)
+            observation, reward, terminated, info = env.step(action)
             env.render()
 
-            if info["score"] > 0:
-                print(info)
+            print(info)
 
             if terminated:
                 done = True
