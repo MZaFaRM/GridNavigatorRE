@@ -1,3 +1,5 @@
 venv/
 log/
 *.zip
+
+__pycache__/

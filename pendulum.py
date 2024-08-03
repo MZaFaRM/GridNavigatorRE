@@ -1,33 +1,33 @@
+import gymnasium as gym
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.evaluation import evaluate_policy
 
-import gymnasium as gym
+env = gym.make("BipedalWalker-v3", render_mode="human")
+observation, info = env.reset(seed=42)
 
-env = gym.make("Pendulum-v1", g=9.81)
-env = DummyVecEnv([lambda: env])
+# env = DummyVecEnv([lambda: env])
 
-# model = PPO("MlpPolicy", env=env)
-model = PPO.load("PendulumAI", env=env)
+# model = PPO("MlpPolicy", env, verbose=1)
+# model.learn(total_timesteps=1000)
 
-model.learn(total_timesteps=200000, progress_bar=True)
-model.save("PendulumAI")
+model = PPO.load("ppo_bipedalwalker", env=env)
+# model.learn(total_timesteps=500000)
+# model.save("ppo_bipedalwalker")
 
-env.reset()
+
 score = 0
 
-play_env = gym.make("Pendulum-v1", g=9.81, render_mode="human")
-obs, info = play_env.reset()
+for _ in range(1000):
+    action, info = model.predict(observation)
+    observation, reward, terminated, truncated, info = env.step(action)
+    env.render()
 
-while True:
-    play_env.render()
-    action, _ = model.predict(obs)
-    obs, reward, terminated, truncated, info = play_env.step(action)
+    if terminated:
+        observation, info = env.reset()
+
     score += reward
 
-    if terminated or truncated:
-        break
+print("Score: ", score)
 
 env.close()
-print("Reward:", score)
-print(evaluate_policy(model, env))
