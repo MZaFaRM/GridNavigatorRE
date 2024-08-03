@@ -29,8 +29,8 @@ def distance_between_points(a, b):
     return ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
 
 
-def translate_human_input(event):
-    action = np.array([0, 0, 0])
+def translate_human_input(event, previous_action):
+    action = previous_action.copy()
 
     if event.type == pygame.KEYDOWN:
         if event.key == pygame.K_d:

@@ -1,3 +1,4 @@
+import numpy as np
 import pygame
 import os
 import sys
@@ -126,8 +127,8 @@ class Fuel:
 
     def update(self):
         self.position = (
-            random.randint(5, self.screen_width - 5),
-            random.randint(5, self.screen_height - 5),
+            random.randint(50, self.screen_width - 50),
+            random.randint(50, self.screen_height - 50),
         )
         self.fuel_rect = self.fuel.get_rect(center=self.position)
         return self.position
@@ -180,7 +181,7 @@ class CarEnv:
 
         # Handbrakes
         if action[2] == 1:
-            self.car.handling *= 2
+            self.car.handling = 2 * self.car.default_handling
             self.car.handbrake = True
         else:
             self.car.handbrake = False
@@ -234,6 +235,7 @@ class CarEnv:
 
 env = CarEnv()
 done = False
+action = np.array([0, 0, 0])
 
 while not done:
     events = pygame.event.get() or [pygame.event.Event(pygame.NOEVENT)]
@@ -242,7 +244,8 @@ while not done:
         if event.type == pygame.QUIT:
             done = True
         else:
-            action = helpers.translate_human_input(event)
+            action = helpers.translate_human_input(event, previous_action=action)
+
             observation, reward, terminated, info = env.step(action)
             env.render()
 
