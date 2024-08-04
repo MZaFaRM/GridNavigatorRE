@@ -34,26 +34,26 @@ def translate_human_input(event, previous_action):
 
     if event.type == pygame.KEYDOWN:
         if event.key == pygame.K_d:
-            action[0] = 1
+            action[0] = 2
         elif event.key == pygame.K_a:
-            action[0] = -1
+            action[0] = 0
         elif event.key == pygame.K_w:
-            action[1] = 1
+            action[1] = 2
         elif event.key == pygame.K_s:
-            action[1] = -1
+            action[1] = 0
         elif event.key == pygame.K_LSHIFT:
-            action[2] = 1
+            action[2] = 2
 
     elif event.type == pygame.KEYUP:
         if event.key == pygame.K_d:
-            action[0] = 0
+            action[0] = 1
         elif event.key == pygame.K_a:
-            action[0] = 0
+            action[0] = 1
         elif event.key == pygame.K_w:
-            action[1] = 0
+            action[1] = 1
         elif event.key == pygame.K_s:
-            action[1] = 0
+            action[1] = 1
         elif event.key == pygame.K_LSHIFT:
-            action[2] = 0
+            action[2] = 1
 
     return action

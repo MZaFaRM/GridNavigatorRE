@@ -18,6 +18,7 @@ model = PPO.load("ppo_bipedalwalker", env=env)
 
 score = 0
 
+
 for _ in range(1000):
     action, info = model.predict(observation)
     observation, reward, terminated, truncated, info = env.step(action)
