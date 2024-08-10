@@ -11,6 +11,7 @@ from gymnasium import Env
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 from stable_baselines3.common.evaluation import evaluate_policy
+import sys
 
 
 class Car:
@@ -18,9 +19,10 @@ class Car:
         self,
         screen,
         car_path=None,
-        handling=7,
+        handling=5,
         max_speed=10,
         friction=0.1,
+        mileage=80,
     ):
         self.original_car = pygame.image.load(car_path).convert_alpha()
         self.original_car = helpers.aspect_scale_image(self.original_car, 75)
@@ -35,9 +37,6 @@ class Car:
 
         self.position = (199, 285)
 
-        self.car_rect = self.car.get_rect(center=self.position)
-        pygame.draw.rect(self.screen, (255, 0, 0), self.car_rect, 2)  # debug
-
         self.speed = 0
         self.angle = 0
         self.move_angle = 0
@@ -46,13 +45,17 @@ class Car:
         self.handling = handling
         self.max_speed = max_speed
         self.friction = friction
+        self.mileage = mileage
 
         self.accelerate = False
         self.reverse = False
         self.left = False
         self.right = False
         self.handbrake = False
-        self.fuel_balance = 200
+        self.fuel_balance = mileage
+
+        self.car_rect = self.car.get_rect(center=self.position)
+        pygame.draw.rect(self.screen, (255, 0, 0), self.car_rect, 2)  # debug
 
         self.memory = [self.car_rect.center]
 
@@ -142,19 +145,18 @@ class Fuel:
 
         self.fuel = pygame.image.load(fuel_path).convert_alpha()
         self.fuel = helpers.aspect_scale_image(self.fuel, 30)
-
         self.update()
 
     def render(self):
         pygame.draw.rect(self.screen, (255, 0, 0), self.fuel_rect, 2)  # debug
-        self.screen.blit(self.fuel, self.position)
+        self.screen.blit(self.fuel, self.fuel_rect.topleft)
 
     def update(self):
-        # self.position = (
-        #     random.randint(50, self.screen.get_width() - 50),
-        #     random.randint(50, self.screen.get_height() - 50),
-        # )
-        self.position = (515, 537)
+        self.position = (
+            random.randint(50, self.screen.get_width() - 50),
+            random.randint(50, self.screen.get_height() - 50),
+        )
+        # self.position = (515, 537)
         self.fuel_rect = self.fuel.get_rect(center=self.position)
         return self.position
 
@@ -167,7 +169,8 @@ class CarEnv(Env):
         self.screen = pygame.display.set_mode(screen_resolution)
         self.clock = pygame.time.Clock()
 
-        self.truncation_limit = 240
+        # self.truncation_limit = float("inf")
+        self.truncation_limit = 80 * 1
         self.truncation = self.truncation_limit
 
         if seed:
@@ -193,17 +196,17 @@ class CarEnv(Env):
             -360,                                               # car angle
             -self.car.max_speed,                                # car speed
             0,                                                  # fuel balance
+            0,                                                  # distance
             0, 0,                                               # fuel position (x, y)
-            0                                                   # distance
         ], dtype=np.float32)
 
         obs_high = np.array([
             screen_width, screen_height,                        # car position (x, y)
             360,                                                # car angle
-            self.car.max_speed,                                 # car speed - assuming a maximum speed
-            200,                                                # fuel balance - assuming a maximum fuel
+            self.car.max_speed,                                 # car speed
+            self.car.mileage,                                   # fuel balance - assuming a maximum fuel
+            np.sqrt(screen_width**2 + screen_height**2),        # distance - maximum distance
             screen_width, screen_height,                        # fuel position (x, y)
-            np.sqrt(screen_width**2 + screen_height**2)         # distance - maximum distance
         ], dtype=np.float32)
         # fmt: on
 
@@ -254,6 +257,7 @@ class CarEnv(Env):
         #     self.car.handling = self.car.default_handling
 
         self.car.update()
+
         reward = self.car.get_reward()
 
         distance_to_fuel = helpers.distance_between_points(
@@ -265,12 +269,11 @@ class CarEnv(Env):
         )
 
         if self.car.car_rect.colliderect(self.fuel.fuel_rect):
-            self.done = True
-            reward += self.car.fuel_balance
+            self.car.fuel_balance = self.car.mileage
+            reward += self.car.fuel_balance * 2
             reward += 100
 
             self.fuel.update()
-            self.car.fuel_balance = 200
 
         elif distance_to_fuel < previous_distance_to_fuel:
             reward += max(0, 1 - (distance_to_fuel / 1000))
@@ -348,12 +351,14 @@ class CarEnv(Env):
         sys.exit()
 
 
-train = False
-# train = False
+if len(sys.argv) > 1:
+    train = True
+else:
+    train = False
 
 
 if train:
-    env = CarEnv(seed=100)
+    env = CarEnv(seed=24)
     check_env(env)
 
     num_envs = 4
@@ -363,7 +368,7 @@ if train:
     try:
         model = PPO.load("ppo_car", env=env)
     except FileNotFoundError:
-        model = PPO("MlpPolicy", env, verbose=2)
+        model = PPO("MlpPolicy", env, verbose=2, seed=24)
 
     model.learn(total_timesteps=500_000, progress_bar=True)
     model.save("ppo_car")
@@ -371,24 +376,24 @@ if train:
     del model
     del env
 
-env = CarEnv(seed=100)
+env = CarEnv(seed=24)
 
 try:
-    model = PPO.load("left_right_fixed", env=env)
+    model = PPO.load("ppo_car", env=env)
 except FileNotFoundError:
     model = PPO("MlpPolicy", env, verbose=2)
 
-print(evaluate_policy(model, env, n_eval_episodes=100, deterministic=True))
+# print(evaluate_policy(model, env, n_eval_episodes=100, deterministic=True))
 
 done = False
 score = 0
-obs, info = env.reset(seed=100)
+obs, info = env.reset(seed=24)
 
-env.observation_space.sample()
+import time
 
 for i in range(5):
-    while not done:        
-        action, _ = model.predict(obs)
+    while not done:
+        action, _ = model.predict(obs, deterministic=True)
         obs, reward, terminated, truncated, info = env.step(action)
         env.render()
         score += reward
@@ -399,4 +404,4 @@ for i in range(5):
     print(score)
     score = 0
     done = False
-    obs, info = env.reset(seed=100)
+    obs, info = env.reset(seed=24)
