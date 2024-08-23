@@ -9,8 +9,7 @@ from gymnasium.spaces import Box, Discrete
 from stable_baselines3.common.env_checker import check_env
 from gymnasium import Env
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
-from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.vec_env import DummyVecEnv
 import sys
 
 
@@ -20,16 +19,15 @@ class Car(pygame.sprite.Sprite):
         screen,
         car_path=None,
         handling=5,
-        max_speed=10,
+        max_speed=20,
         friction=0.1,
-        mileage=80,
     ):
         super().__init__()
         self.screen = screen
 
         # Load and scale the car image
         self.original_image = pygame.image.load(car_path).convert_alpha()
-        self.original_image = helpers.aspect_scale_image(self.original_image, 100)
+        self.original_image = helpers.aspect_scale_image(self.original_image, 75)
         self.image = self.original_image.copy()
 
         # Set initial position and movement parameters
@@ -43,7 +41,6 @@ class Car(pygame.sprite.Sprite):
         self.handling = handling
         self.max_speed = max_speed
         self.friction = friction
-        self.mileage = mileage
 
         # Control states
         self.accelerate = False
@@ -51,22 +48,20 @@ class Car(pygame.sprite.Sprite):
         self.left = False
         self.right = False
         self.handbrake = False
-        self.fuel_balance = mileage
+        self.time_driving = 0
 
         # Car's rect (sprite's rect)
         self.rect = self.image.get_rect(center=self.position)
 
         # Store previous positions in memory (useful for collision or other checks)
-        self.memory = [self.rect.center]
+        self.memory = []
 
     def get_reward(self):
+        # fmt: off
         # Reward function based on car's position
-        if self.rect.centerx < 0 or self.rect.centerx > self.screen.get_width():
-            return -1
-        if self.rect.centery < 0 or self.rect.centery > self.screen.get_height():
-            return -1
         if (len(self.memory) > 1) and self.memory[-1] == self.memory[-2]:
-            return -1
+            return -10
+        # fmt: on
         return 0
 
     def update(self):
@@ -80,8 +75,10 @@ class Car(pygame.sprite.Sprite):
         elif self.speed < 0:
             self.speed += self.friction
 
-        if not self.handbrake:
-            self.move_angle = self.angle
+        self.move_angle = self.angle
+
+        # if not self.handbrake:
+        #     self.move_angle = self.angle
 
         if self.speed > self.max_speed:
             self.speed = self.max_speed
@@ -108,7 +105,7 @@ class Car(pygame.sprite.Sprite):
             self.speed = 0
 
         if self.speed != 0:
-            self.fuel_balance -= 1 * abs(self.speed) / self.max_speed
+            self.time_driving += 1
             new_x = self.rect.centerx + (
                 self.speed * math.cos(math.radians(self.move_angle))
             )
@@ -122,14 +119,14 @@ class Car(pygame.sprite.Sprite):
             self.original_image, self.angle, self.rect.centerx, self.rect.centery
         )
 
-        # Track movement in memory
-        self.memory.append(self.rect.center)
-        if len(self.memory) > 10:
+        # Maintain memory length
+        if len(self.memory) > 4:
             self.memory.pop(0)
 
     def render(self):
         # Render the car on the screen
         self.screen.blit(self.image, self.rect.topleft)
+        # pygame.draw.rect(self.screen, (0, 255, 0), self.rect, 2)
 
 
 class Target(pygame.sprite.Sprite):
@@ -176,8 +173,8 @@ class Obstacle(pygame.sprite.Sprite):
         # Randomly position the obstacle, ensuring no overlap
         while True:
             position = (
-                random.randint(50, self.screen.get_width() - 50),
-                random.randint(50, self.screen.get_height() - 50),
+                random.randint(75, self.screen.get_width() - 75),
+                random.randint(75, self.screen.get_height() - 75),
             )
             obstacle_sprite.rect.center = position
 
@@ -187,6 +184,14 @@ class Obstacle(pygame.sprite.Sprite):
                 if other_obstacle != obstacle_sprite
             ):
                 break
+
+    def get_corners(self, sprite):
+        return [
+            sprite.rect.topleft,
+            sprite.rect.topright,
+            sprite.rect.bottomleft,
+            sprite.rect.bottomright,
+        ]
 
     def render(self):
         # Draw all obstacles on the screen
@@ -201,7 +206,7 @@ class Obstacle(pygame.sprite.Sprite):
             obstacle_sprite = pygame.sprite.Sprite()  # Create a new sprite
             obstacle_sprite.image = self.obstacle_image
             obstacle_sprite.image = helpers.aspect_scale_image(
-                obstacle_sprite.image, 65
+                obstacle_sprite.image, 45
             )
             obstacle_sprite.rect = obstacle_sprite.image.get_rect()
 
@@ -211,14 +216,15 @@ class Obstacle(pygame.sprite.Sprite):
 
 class CarEnv(Env):
     def __init__(self, seed=None, render_mode="human"):
-        screen_width, screen_height = screen_resolution = (800, 600)
+        screen_resolution = (800, 600)
 
         pygame.init()
         self.screen = pygame.display.set_mode(screen_resolution)
         self.clock = pygame.time.Clock()
 
+        seed = 1
         if seed:
-            random.seed(seed)
+            random.seed(None)
 
         self.car = Car(
             screen=self.screen,
@@ -230,107 +236,120 @@ class CarEnv(Env):
             target_path=os.path.join("assets", "sprites", "flag.png"),
         )
 
+        self.displacement_to_target = helpers.distance_between_points(
+            self.car.rect.center, self.target.rect.center
+        )
+
+        self.progress = 0  # 0%
+
         self.obstacle = Obstacle(
             screen=self.screen,
             obstacle_path=os.path.join("assets", "sprites", "traffic-cone.png"),
             spawn_amount=5,
         )
 
-        # self.truncation_limit = 80 * 1
-        self.truncation_limit = self.car.mileage
+        self.truncation_limit = 1000
         self.truncation = self.truncation_limit
 
         # 0 - Left, 1 - None, 2 - Right
-        self.action_space = Discrete(3)
-
-        # fmt: off
-        # Define the observation space
-        obs_low = np.array([
-            0, 0,                                               # car position (x, y)
-            -360,                                               # car angle
-            -self.car.max_speed,                                # car speed
-            0,                                                  # fuel balance
-            0,                                                  # distance
-            0, 0,                                               # target position (x, y)
-        ], dtype=np.float32)
-
-        obs_high = np.array([
-            screen_width, screen_height,                        # car position (x, y)
-            360,                                                # car angle
-            self.car.max_speed,                                 # car speed
-            self.car.mileage,                                   # fuel balance 
-            np.sqrt(screen_width**2 + screen_height**2),        # distance - maximum distance
-            screen_width, screen_height,                        # target position (x, y)
-        ], dtype=np.float32)
-        # fmt: on
-
-        self.observation_space = Box(low=obs_low, high=obs_high, dtype=np.float32)
+        self.action_space = Box(low=-1, high=1, shape=(2,), dtype=np.int8)
+        self.observation_space = Box(
+            low=-np.inf, high=np.inf, shape=(44,), dtype=np.float32
+        )
 
         self.done = False
+
+    def draw_grid(self):
+        blockSize = 100  # Set the size of the grid block
+        white = (0, 0, 0)
+        for x in range(0, self.screen.get_width(), blockSize):
+            for y in range(0, self.screen.get_height(), blockSize):
+                rect = pygame.Rect(x, y, blockSize, blockSize)
+                pygame.draw.rect(self.screen, white, rect, 1)
 
     def step(self, action):
         self.truncation -= 1
 
         # Left or Right
-        if action == 2:
-            self.car.right = True
-        elif action == 0:
-            self.car.left = True
-        else:
+        if action[0] == -1:
+            self.car.re = True
+            self.car.right = False
+        elif action[0] == 0:
             self.car.right = False
             self.car.left = False
+        elif action[0] == 1:
+            self.car.right = True
+            self.car.left = False
 
-        self.car.accelerate = True
-        self.car.handbrake = False
+        if action[1] == -1:
+            self.car.reverse = True
+            self.car.handbrake = False
+            self.car.accelerate = False
+        elif action[1] == 0:
+            self.car.reverse = False
+            self.car.handbrake = True
+            self.car.accelerate = False
+        elif action[1] == 1:
+            self.car.reverse = False
+            self.car.handbrake = False
+            self.car.accelerate = True
 
         self.car.update()
+        reward = self.car.get_reward()
+
+        # fmt: off
+        # out of bounds
+        if (
+            (self.car.rect.centerx < -50) or (self.car.rect.centerx > self.screen.get_width() + 50)
+            or (self.car.rect.centery < -50) or ( self.car.rect.centery > self.screen.get_height() + 50)
+            ):
+            self.done = True
+            reward = -500
+        # fmt: on
 
         # Check collision with obstacles using the sprite group
         if pygame.sprite.spritecollide(self.car, self.obstacle.obstacles, False):
             self.car.speed = 0
             self.done = True
-            reward = -100
-            return (
-                self._get_obs(),
-                reward,
-                self.done,
-                self.truncation <= 0,
-                {
-                    "fuel_balance": self.car.fuel_balance,
-                    "position": self.car.rect.center,
-                    "angle": self.car.angle,
-                    "speed": self.car.speed,
-                    "score": reward,
-                    "done": self.done,
-                },
+            reward = -500
+
+        elif pygame.sprite.spritecollide(self.car, [self.target], False):
+            self.done = True
+            reward += 500 + (self.truncation_limit - self.car.time_driving)
+
+        else:
+            # logic to reward based on distance to target
+            distance_to_target = helpers.distance_between_points(
+                self.car.rect.center, self.target.rect.center
             )
 
-        reward = self.car.get_reward()
+            distance_covered_percentage = (
+                1 - (distance_to_target / self.displacement_to_target)
+            ) * 100
 
-        distance_to_target = helpers.distance_between_points(
-            self.car.rect.center, self.target.rect.center
-        )
+            if distance_covered_percentage >= (self.progress):
+                self.car.time_driving
+                reward += 20
+                self.progress += 10
 
-        previous_distance_to_target = helpers.distance_between_points(
-            self.car.memory[-2], self.target.rect.center
-        )
+            elif distance_covered_percentage < (self.progress - 10):
+                reward -= 10
+                self.progress -= 10
 
-        if self.car.rect.colliderect(self.target.rect):
-            self.car.fuel_balance = self.car.mileage
-            self.truncation = self.truncation_limit
-            reward += self.car.fuel_balance * 2
-            reward += 100
+            # self.car.memory.append(distance_covered_percentage)
 
-            self.target.update()
+            # if len(self.car.memory) >= 2:
+            #     # rewarding based on how much percentage of progress completed
+            #     progress = self.car.memory[-1] - self.car.memory[-2]
+            #     if progress > 0:
+            #         reward += 1
+            #     elif self.car.memory[-1] <= self.car.memory[-2]:
+            #         reward -= 1
 
-        elif distance_to_target < previous_distance_to_target:
-            reward += max(0, 1 - (distance_to_target / 1000))
-        elif distance_to_target >= previous_distance_to_target:
-            reward -= max(0, 1 - (distance_to_target / 1000))
-        elif self.car.fuel_balance <= 0:
-            reward -= 100
-            self.done = True
-            self.truncation = 0
+            if self.truncation < 0:
+                reward -= 100
+                self.done = True
+                self.truncation = 0
 
         observation = self._get_obs()
 
@@ -340,7 +359,6 @@ class CarEnv(Env):
             self.done,
             self.truncation <= 0,
             {
-                "fuel_balance": self.car.fuel_balance,
                 "position": self.car.rect.center,
                 "angle": self.car.angle,
                 "speed": self.car.speed,
@@ -350,27 +368,27 @@ class CarEnv(Env):
         )
 
     def _get_obs(self):
-        if self.car.fuel_balance < 0:
-            self.car.fuel_balance = 0
+        obstacle_corners = np.array(
+            [
+                self.obstacle.get_corners(obstacle)
+                for obstacle in self.obstacle.obstacles
+            ],
+            dtype=np.float32,
+        ).flatten()
 
         return np.array(
             [
-                self.car.rect.centerx,
-                self.car.rect.centery,
-                self.car.angle,
+                *[self.car.rect.centerx, self.car.rect.centery],
                 self.car.speed,
-                self.car.fuel_balance,
-                self.target.rect.centerx,
-                self.target.rect.centery,
-                helpers.distance_between_points(
-                    self.car.rect.center, self.target.rect.center
-                ),
+                self.car.angle,
+                *obstacle_corners,
             ],
             dtype=np.float32,
-        )
+        ).flatten()
 
     def render(self):
         self.screen.fill((255, 255, 255))
+        self.draw_grid()
         self.all_sprites.draw(self.screen)
         pygame.display.flip()
         self.clock.tick(60)
@@ -378,6 +396,8 @@ class CarEnv(Env):
     def reset(self, seed=None):
         self.done = False
         self.truncation = self.truncation_limit
+
+        seed = 1
 
         if seed:
             random.seed(seed)
@@ -399,7 +419,9 @@ class CarEnv(Env):
 
         # Re-create the sprite group
         self.all_sprites = pygame.sprite.Group(
-            self.car, self.target, *self.obstacle.obstacles
+            self.car,
+            self.target,
+            *self.obstacle.obstacles,
         )
 
         return (self._get_obs(), {})
@@ -418,8 +440,6 @@ if train:
     env = CarEnv()
     check_env(env)
 
-    num_envs = 4
-    # env = SubprocVecEnv([env for _ in range(num_envs)])
     env = DummyVecEnv([lambda: env])
 
     try:
@@ -451,12 +471,10 @@ import time
 
 for i in range(500):
     while not done:
-        action, _ = model.predict(obs, deterministic=True)
+        action, _ = model.predict(obs)
         obs, reward, terminated, truncated, info = env.step(action)
         env.render()
         score += reward
-
-        # time.sleep(0.025)
 
         if truncated or terminated:
             done = True
