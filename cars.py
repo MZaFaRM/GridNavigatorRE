@@ -1,3 +1,4 @@
+import contextlib
 import numpy as np
 import pygame
 import os
@@ -16,14 +17,14 @@ import sys
 class Car(pygame.sprite.Sprite):
     def __init__(
         self,
-        screen,
+        env,
         car_path=None,
-        handling=5,
-        max_speed=20,
-        friction=0.1,
+        block_size=100,
+        seed=None,
     ):
         super().__init__()
-        self.screen = screen
+        self.env = env
+        self.screen = env.screen
 
         # Load and scale the car image
         self.original_image = pygame.image.load(car_path).convert_alpha()
@@ -32,96 +33,56 @@ class Car(pygame.sprite.Sprite):
 
         # Set initial position and movement parameters
         self.position = (50, 50)
-        self.speed = 0
-        self.angle = 0
-        self.move_angle = 0
+        self.block_size = block_size
 
-        # Car properties
-        self.default_handling = handling
-        self.handling = handling
-        self.max_speed = max_speed
-        self.friction = friction
-
-        # Control states
-        self.accelerate = False
-        self.reverse = False
-        self.left = False
-        self.right = False
-        self.handbrake = False
         self.time_driving = 0
 
         # Car's rect (sprite's rect)
         self.rect = self.image.get_rect(center=self.position)
 
-        # Store previous positions in memory (useful for collision or other checks)
-        self.memory = []
+    def reset(self, seed=None):
+        if seed:
+            random.seed(seed)
 
-    def get_reward(self):
-        # fmt: off
-        # Reward function based on car's position
-        if (len(self.memory) > 1) and self.memory[-1] == self.memory[-2]:
-            return -10
-        # fmt: on
-        return 0
+        self.time_driving = 0
+        self.position = (50, 50)
+        self.rect = self.image.get_rect(center=self.position)
 
-    def update(self):
-        # Update car's speed, movement, and fuel consumption
-        if self.accelerate and self.speed < self.max_speed:
-            self.speed += 0.5
-        elif self.reverse and self.speed > -self.max_speed:
-            self.speed -= 0.5
-        elif self.speed > 0:
-            self.speed -= self.friction
-        elif self.speed < 0:
-            self.speed += self.friction
-
-        self.move_angle = self.angle
-
-        # if not self.handbrake:
-        #     self.move_angle = self.angle
-
-        if self.speed > self.max_speed:
-            self.speed = self.max_speed
-        elif self.speed < -self.max_speed:
-            self.speed = -self.max_speed
-
-        if self.left:
-            self.angle = (
-                self.angle + (self.handling * (self.speed / self.max_speed))
-            ) % 360
-        if self.right:
-            self.angle = (
-                self.angle - (self.handling * (self.speed / self.max_speed))
-            ) % 360
-
-        if self.angle > self.move_angle:
-            self.move_angle -= 1
-        elif self.angle < self.move_angle:
-            self.move_angle += 1
-        else:
-            self.move_angle = self.angle
-
-        if self.speed < 0.05 and self.speed > -0.05:
-            self.speed = 0
-
-        if self.speed != 0:
-            self.time_driving += 1
-            new_x = self.rect.centerx + (
-                self.speed * math.cos(math.radians(self.move_angle))
+    def move_right(self):
+        if self.rect.centerx < self.screen.get_width() - self.block_size:
+            self.rect.centerx += self.block_size
+            self.image, self.rect = helpers.rotate_center(
+                self.original_image, 0, self.rect.center
             )
-            new_y = self.rect.centery - (
-                self.speed * math.sin(math.radians(self.move_angle))
+            return True
+        return False
+
+    def move_left(self):
+        if self.rect.centerx > self.block_size:
+            self.rect.centerx -= self.block_size
+            self.image, self.rect = helpers.rotate_center(
+                self.original_image, 180, self.rect.center
             )
-            self.rect.center = (new_x, new_y)
+            return True
+        return False
 
-        # Rotate the car image according to its angle
-        self.image, self.rect = helpers.rotate_center(
-            self.original_image, self.angle, self.rect.centerx, self.rect.centery
-        )
+    def move_up(self):
+        if self.rect.centery > self.block_size:
+            self.rect.centery -= self.block_size
+            self.image, self.rect = helpers.rotate_center(
+                self.original_image, 90, self.rect.center
+            )
+            return True
+        return False
 
-        # Maintain memory length
-        if len(self.memory) > 4:
-            self.memory.pop(0)
+    def move_down(self):
+        if self.rect.centery < self.screen.get_height() - self.block_size:
+            self.rect.centery += self.block_size
+            self.image, self.rect = helpers.rotate_center(
+                self.original_image, -90, self.rect.center
+            )
+            return True
+        return False
 
     def render(self):
         # Render the car on the screen
@@ -132,17 +93,24 @@ class Car(pygame.sprite.Sprite):
 class Target(pygame.sprite.Sprite):
     def __init__(
         self,
-        screen,
+        env,
         target_path=None,
     ):
         super().__init__()  # Initialize the pygame.sprite.Sprite
-        self.screen = screen
+        self.env = env
+        self.screen = env.screen
 
         # Load and scale the target image
         self.image = pygame.image.load(target_path).convert_alpha()
         self.image = helpers.aspect_scale_image(self.image, 70)
 
         # Set the initial position
+        self.update()
+
+    def reset(self, seed=None):
+        if seed:
+            random.seed(seed)
+
         self.update()
 
     def update(self):
@@ -159,105 +127,211 @@ class Target(pygame.sprite.Sprite):
 class Obstacle(pygame.sprite.Sprite):
     def __init__(
         self,
-        screen,
-        spawn_amount=5,
-        obstacle_path=None,
+        env,
+        stationary_spawns=5,
+        moving_spawns=5,
+        stationary_obstacle_path=None,
+        moving_obstacle_path=None,
+        block_size=100,
     ):
         super().__init__()  # Initialize the pygame.sprite.Sprite
-        self.screen = screen
-        self.spawn_amount = spawn_amount
-        self.obstacle_image = pygame.image.load(obstacle_path).convert_alpha()
+        self.env = env
+        self.screen = env.screen
+        self.stationary_spawn_amount = stationary_spawns
+        self.moving_spawn_amount = moving_spawns
+
+        self.stationary_obstacle_image = pygame.image.load(
+            stationary_obstacle_path
+        ).convert_alpha()
+        self.stationary_obstacle_image = helpers.aspect_scale_image(
+            self.stationary_obstacle_image, 45
+        )
+
+        self.moving_obstacle_image = pygame.image.load(
+            moving_obstacle_path
+        ).convert_alpha()
+        self.moving_obstacle_image = helpers.aspect_scale_image(
+            self.moving_obstacle_image, 70
+        )
+
+        self.block_size = block_size
+        self.update()
+
+    def reset(self, seed=None):
+        if seed:
+            random.seed(seed)
+
         self.update()
 
     def _set_obstacle_position(self, obstacle_sprite):
         # Randomly position the obstacle, ensuring no overlap
         while True:
-            position = (
-                random.randint(75, self.screen.get_width() - 75),
-                random.randint(75, self.screen.get_height() - 75),
+            x_position, y_position = helpers.generate_random_position(
+                self.screen, self.block_size
             )
-            obstacle_sprite.rect.center = position
 
-            if not any(
+            if any(
                 obstacle_sprite.rect.colliderect(other_obstacle.rect)
                 for other_obstacle in self.obstacles
                 if other_obstacle != obstacle_sprite
             ):
+                continue
+            elif x_position == y_position and x_position in [750, 50]:
+                continue
+            else:
+                obstacle_sprite.rect.center = (x_position, y_position)
                 break
 
-    def get_corners(self, sprite):
-        return [
-            sprite.rect.topleft,
-            sprite.rect.topright,
-            sprite.rect.bottomleft,
-            sprite.rect.bottomright,
-        ]
+        return obstacle_sprite
 
     def render(self):
         # Draw all obstacles on the screen
         self.obstacles.draw(self.screen)
 
     def update(self):
-        # Create a list to hold individual obstacle sprites
-        self.obstacles = pygame.sprite.Group()
+        if self.env.truncation == self.env.truncation_limit:
+            # Initialize the obstacles group
+            self.obstacles = pygame.sprite.Group()
 
-        # Create each obstacle and add it to the group
-        for _ in range(self.spawn_amount):
-            obstacle_sprite = pygame.sprite.Sprite()  # Create a new sprite
-            obstacle_sprite.image = self.obstacle_image
-            obstacle_sprite.image = helpers.aspect_scale_image(
-                obstacle_sprite.image, 45
+            # Add stationary obstacles
+            self.obstacles.add(
+                self.create_stationary_obstacles()
+                for _ in range(self.stationary_spawn_amount)
             )
-            obstacle_sprite.rect = obstacle_sprite.image.get_rect()
 
-            self._set_obstacle_position(obstacle_sprite)
-            self.obstacles.add(obstacle_sprite)
+            # Add moving obstacles
+            self.obstacles.add(
+                self.create_moving_obstacles() for _ in range(self.moving_spawn_amount)
+            )
+
+        else:
+            for obstacle in self.obstacles:
+                if obstacle.moving:
+                    self.update_moving_obstacle(obstacle)
+
+    def update_moving_obstacle(self, obstacle):
+        rotate_flag = False
+        # Move obstacle
+        obstacle.rect.centerx, obstacle.rect.centery = helpers.transform_coordinates(
+            position=(obstacle.rect.centerx, obstacle.rect.centery),
+            angle=obstacle.angle,
+            steps=self.block_size,
+        )
+
+        # Check for collisions with other obstacles
+        if any(
+            obstacle.rect.colliderect(other_obstacle.rect)
+            for other_obstacle in self.obstacles
+            if other_obstacle != obstacle
+        ):
+            rotate_flag = True
+
+        # Check for out-of-bounds
+        if (
+            obstacle.rect.centerx < -50
+            or obstacle.rect.centerx > self.screen.get_width() + 50
+            or obstacle.rect.centery < -50
+            or obstacle.rect.centery > self.screen.get_height() + 50
+        ):
+            rotate_flag = True
+
+        if rotate_flag:
+            # Reverse the move and adjust direction
+            obstacle.rect.centerx, obstacle.rect.centery = (
+                helpers.transform_coordinates(
+                    position=(obstacle.rect.centerx, obstacle.rect.centery),
+                    angle=obstacle.angle,
+                    steps=-self.block_size,
+                )
+            )
+            obstacle = self.set_direction(obstacle)
+            obstacle.rect.centerx, obstacle.rect.centery = (
+                helpers.transform_coordinates(
+                    position=(obstacle.rect.centerx, obstacle.rect.centery),
+                    angle=obstacle.angle,
+                    steps=self.block_size,
+                )
+            )
+
+    def create_stationary_obstacles(self):
+        obstacle_sprite = pygame.sprite.Sprite()  # Create a new sprite
+        obstacle_sprite.image = self.stationary_obstacle_image
+        obstacle_sprite.rect = obstacle_sprite.image.get_rect()
+        obstacle_sprite.moving = False
+        return self._set_obstacle_position(obstacle_sprite)
+
+    def create_moving_obstacles(self):
+        obstacle_sprite = pygame.sprite.Sprite()
+        obstacle_sprite.image = self.moving_obstacle_image
+        obstacle_sprite.rect = obstacle_sprite.image.get_rect()
+        obstacle_sprite.moving = True
+        self.set_direction(obstacle_sprite)
+        return self._set_obstacle_position(obstacle_sprite)
+
+    def set_direction(self, obstacle):
+        possible_angles = [0, 90, 180, 270]
+        if hasattr(obstacle, "angle"):
+            possible_angles.remove(obstacle.angle)
+        obstacle.angle = random.choice(possible_angles)
+        obstacle.image, obstacle.rect = helpers.rotate_center(
+            self.moving_obstacle_image, obstacle.angle, obstacle.rect.center
+        )
+        return obstacle
 
 
 class CarEnv(Env):
     def __init__(self, seed=None, render_mode="human"):
-        screen_resolution = (800, 600)
+        screen_resolution = (800, 800)
 
         pygame.init()
         self.screen = pygame.display.set_mode(screen_resolution)
         self.clock = pygame.time.Clock()
 
-        seed = 1
+        self.progress = 0  # 0%
+        self.truncation_limit = 50
+        self.truncation = self.truncation_limit
+
+        # 0 - Left, 1 - Right, 2 - Top, 3 - Bottom
+        self.action_space = Discrete(4)
+
+        # 1 added to use CnnPolicy and simulate the channel dimension
+        self.observation_space = Box(
+            low=0,
+            high=3,
+            shape=(self.screen.get_width() // 100, self.screen.get_height() // 100),
+            dtype=np.float32,
+        )
+
+        self.done = False
+
         if seed:
             random.seed(None)
 
         self.car = Car(
-            screen=self.screen,
+            env=self,
             car_path=os.path.join("assets", "sprites", "car.png"),
+            block_size=100,
         )
 
         self.target = Target(
-            screen=self.screen,
+            env=self,
             target_path=os.path.join("assets", "sprites", "flag.png"),
+        )
+
+        self.obstacle = Obstacle(
+            env=self,
+            stationary_obstacle_path=os.path.join(
+                "assets", "sprites", "traffic-cone.png"
+            ),
+            stationary_spawns=0,
+            moving_obstacle_path=os.path.join("assets", "sprites", "car-alter.png"),
+            moving_spawns=5,
+            block_size=100,
         )
 
         self.displacement_to_target = helpers.distance_between_points(
             self.car.rect.center, self.target.rect.center
         )
-
-        self.progress = 0  # 0%
-
-        self.obstacle = Obstacle(
-            screen=self.screen,
-            obstacle_path=os.path.join("assets", "sprites", "traffic-cone.png"),
-            spawn_amount=5,
-        )
-
-        self.truncation_limit = 1000
-        self.truncation = self.truncation_limit
-
-        # 0 - Left, 1 - None, 2 - Right
-        self.action_space = Box(low=-1, high=1, shape=(2,), dtype=np.int8)
-        self.observation_space = Box(
-            low=-np.inf, high=np.inf, shape=(44,), dtype=np.float32
-        )
-
-        self.done = False
 
     def draw_grid(self):
         blockSize = 100  # Set the size of the grid block
@@ -269,33 +343,25 @@ class CarEnv(Env):
 
     def step(self, action):
         self.truncation -= 1
+        self.car.time_driving += 1
+        self.obstacle.update()
+        reward = 0
 
-        # Left or Right
-        if action[0] == -1:
-            self.car.re = True
-            self.car.right = False
-        elif action[0] == 0:
-            self.car.right = False
-            self.car.left = False
-        elif action[0] == 1:
-            self.car.right = True
-            self.car.left = False
+        # previous_distance = helpers.distance_between_points(
+        #     self.car.rect.center, self.target.rect.center
+        # )
 
-        if action[1] == -1:
-            self.car.reverse = True
-            self.car.handbrake = False
-            self.car.accelerate = False
-        elif action[1] == 0:
-            self.car.reverse = False
-            self.car.handbrake = True
-            self.car.accelerate = False
-        elif action[1] == 1:
-            self.car.reverse = False
-            self.car.handbrake = False
-            self.car.accelerate = True
+        if action == 0:
+            result = self.car.move_left()
+        elif action == 1:
+            result = self.car.move_right()
+        elif action == 2:
+            result = self.car.move_up()
+        elif action == 3:
+            result = self.car.move_down()
 
-        self.car.update()
-        reward = self.car.get_reward()
+        if not result:
+            reward -= 10
 
         # fmt: off
         # out of bounds
@@ -304,47 +370,33 @@ class CarEnv(Env):
             or (self.car.rect.centery < -50) or ( self.car.rect.centery > self.screen.get_height() + 50)
             ):
             self.done = True
-            reward = -500
+            reward = -100
         # fmt: on
 
         # Check collision with obstacles using the sprite group
         if pygame.sprite.spritecollide(self.car, self.obstacle.obstacles, False):
-            self.car.speed = 0
             self.done = True
-            reward = -500
+            reward -= 100
 
         elif pygame.sprite.spritecollide(self.car, [self.target], False):
             self.done = True
-            reward += 500 + (self.truncation_limit - self.car.time_driving)
+            reward += 100
 
         else:
-            # logic to reward based on distance to target
-            distance_to_target = helpers.distance_between_points(
-                self.car.rect.center, self.target.rect.center
-            )
+            # # logic to reward based on distance to target
+            # new_distance = helpers.distance_between_points(
+            #     self.car.rect.center, self.target.rect.center
+            # )
 
-            distance_covered_percentage = (
-                1 - (distance_to_target / self.displacement_to_target)
-            ) * 100
+            # if previous_distance >= new_distance:
+            #     reward -= 20
 
-            if distance_covered_percentage >= (self.progress):
-                self.car.time_driving
-                reward += 20
-                self.progress += 10
+            # elif new_distance < previous_distance:
+            #     reward += 40
 
-            elif distance_covered_percentage < (self.progress - 10):
-                reward -= 10
-                self.progress -= 10
-
-            # self.car.memory.append(distance_covered_percentage)
-
-            # if len(self.car.memory) >= 2:
-            #     # rewarding based on how much percentage of progress completed
-            #     progress = self.car.memory[-1] - self.car.memory[-2]
-            #     if progress > 0:
-            #         reward += 1
-            #     elif self.car.memory[-1] <= self.car.memory[-2]:
-            #         reward -= 1
+            # for encouraging shorter path
+            # reward -= 10
+            reward -= 2
 
             if self.truncation < 0:
                 reward -= 100
@@ -360,36 +412,44 @@ class CarEnv(Env):
             self.truncation <= 0,
             {
                 "position": self.car.rect.center,
-                "angle": self.car.angle,
-                "speed": self.car.speed,
                 "score": reward,
                 "done": self.done,
             },
         )
 
-    def _get_obs(self):
-        obstacle_corners = np.array(
-            [
-                self.obstacle.get_corners(obstacle)
-                for obstacle in self.obstacle.obstacles
-            ],
-            dtype=np.float32,
-        ).flatten()
+    def map_to_grid(self, position):
+        x, y = position
+        x = (x - 50) // 100
+        y = (y - 50) // 100
+        return x, y
 
-        return np.array(
-            [
-                *[self.car.rect.centerx, self.car.rect.centery],
-                self.car.speed,
-                self.car.angle,
-                *obstacle_corners,
-            ],
-            dtype=np.float32,
-        ).flatten()
+    def _get_obs(self):
+        car_x, car_y = self.map_to_grid(self.car.rect.center)
+        target_x, target_y = self.map_to_grid(self.target.rect.center)
+        obstacle_positions = [
+            self.map_to_grid(obstacle.rect.center)
+            for obstacle in self.obstacle.obstacles
+        ]
+        observation = self.observation_space.low.copy()
+
+        # 1 - Car, 2 - Target, 3 - Obstacle
+        observation[car_x, car_y] = 1
+        observation[target_x, target_y] = 2
+
+        for x, y in obstacle_positions:
+            with contextlib.suppress(IndexError):
+                # Moving obstacles can sometimes move out of bounds
+                observation[x, y] = 3
+
+        observation = np.transpose(observation)
+        return observation
 
     def render(self):
         self.screen.fill((255, 255, 255))
         self.draw_grid()
-        self.all_sprites.draw(self.screen)
+        self.car.render()
+        self.target.render()
+        self.obstacle.render()
         pygame.display.flip()
         self.clock.tick(60)
 
@@ -397,33 +457,12 @@ class CarEnv(Env):
         self.done = False
         self.truncation = self.truncation_limit
 
-        seed = 1
-
         if seed:
             random.seed(seed)
 
-        self.car = Car(
-            screen=self.screen,
-            car_path=os.path.join("assets", "sprites", "car.png"),
-        )
-        self.target = Target(
-            screen=self.screen,
-            target_path=os.path.join("assets", "sprites", "flag.png"),
-        )
-
-        self.obstacle = Obstacle(
-            screen=self.screen,
-            obstacle_path=os.path.join("assets", "sprites", "traffic-cone.png"),
-            spawn_amount=5,
-        )
-
-        # Re-create the sprite group
-        self.all_sprites = pygame.sprite.Group(
-            self.car,
-            self.target,
-            *self.obstacle.obstacles,
-        )
-
+        self.car.reset()
+        self.target.reset()
+        self.obstacle.reset()
         return (self._get_obs(), {})
 
     def close(self):
@@ -445,7 +484,7 @@ if train:
     try:
         model = PPO.load("ppo_car", env=env)
     except FileNotFoundError:
-        model = PPO("MlpPolicy", env, verbose=2)
+        model = PPO("MlpPolicy", env, verbose=2, ent_coef=0.3)
 
     timesteps = int(sys.argv[1]) * 100_000
     model.learn(total_timesteps=timesteps, progress_bar=True)
@@ -471,10 +510,13 @@ import time
 
 for i in range(500):
     while not done:
-        action, _ = model.predict(obs)
-        obs, reward, terminated, truncated, info = env.step(action)
         env.render()
+
+        action, _ = model.predict(obs, deterministic=True)
+        obs, reward, terminated, truncated, info = env.step(action)
         score += reward
+
+        time.sleep(0.5)
 
         if truncated or terminated:
             done = True

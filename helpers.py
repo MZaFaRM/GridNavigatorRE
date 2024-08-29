@@ -1,3 +1,4 @@
+import random
 import numpy as np
 import pygame
 
@@ -17,9 +18,9 @@ def aspect_scale_image(image, width=None, height=None):
     return pygame.transform.scale(image, (new_width, new_height))
 
 
-def rotate_center(image, angle, x, y):
+def rotate_center(image, angle, rect_center):
     rotated_image = pygame.transform.rotate(image, angle)
-    new_rect = rotated_image.get_rect(center=(x, y))
+    new_rect = rotated_image.get_rect(center=rect_center)
     return rotated_image, new_rect
 
 
@@ -57,3 +58,32 @@ def translate_human_input(event, previous_action):
             action[2] = 1
 
     return action
+
+def move_human_input(action, position, speed):
+    x, y = position
+    if action[0] == 0:
+        x -= speed
+    elif action[0] == 2:
+        x += speed
+    if action[1] == 0:
+        y -= speed
+    elif action[1] == 2:
+        y += speed
+    return x, y
+
+def transform_coordinates(position, angle, steps):
+    x, y = position
+    x += steps * np.cos(np.radians(angle))
+    y += steps * np.sin(np.radians(angle))
+    return x, y
+
+
+def generate_random_position(screen, block_size):
+    x_position = (
+        random.randint(1, ((screen.get_width() // block_size) - 1)) * 100
+    ) - 50
+    y_position = (
+        random.randint(1, ((screen.get_height() // block_size) - 1)) * 100
+    ) - 50
+
+    return x_position, y_position
