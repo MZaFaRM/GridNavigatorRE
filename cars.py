@@ -12,6 +12,7 @@ from gymnasium import Env
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
 import sys
+import gymnasium as gym
 
 
 class Car(pygame.sprite.Sprite):
@@ -128,47 +129,70 @@ class Obstacle(pygame.sprite.Sprite):
     def __init__(
         self,
         env,
-        stationary_spawns=5,
-        moving_spawns=5,
-        stationary_obstacle_path=None,
-        moving_obstacle_path=None,
+        image_path,
+        spawns=5,
         block_size=100,
     ):
         super().__init__()  # Initialize the pygame.sprite.Sprite
         self.env = env
         self.screen = env.screen
-        self.stationary_spawn_amount = stationary_spawns
-        self.moving_spawn_amount = moving_spawns
 
-        self.stationary_obstacle_image = pygame.image.load(
-            stationary_obstacle_path
-        ).convert_alpha()
-        self.stationary_obstacle_image = helpers.aspect_scale_image(
-            self.stationary_obstacle_image, 45
-        )
+        self.image = pygame.image.load(image_path).convert_alpha()
+        self.image = helpers.aspect_scale_image(self.image, 45)
 
-        self.moving_obstacle_image = pygame.image.load(
-            moving_obstacle_path
-        ).convert_alpha()
-        self.moving_obstacle_image = helpers.aspect_scale_image(
-            self.moving_obstacle_image, 70
-        )
-
+        self.spawns = spawns
         self.block_size = block_size
-        self.update()
+        self.grid = np.zeros(
+            shape=(
+                self.screen.get_width() // self.block_size,
+                self.screen.get_height() // self.block_size,
+            ),
+            dtype=np.int16,
+        )
 
     def reset(self, seed=None):
         if seed:
             random.seed(seed)
 
-        self.update()
+        self.obstacles = pygame.sprite.Group()
+        for _ in range(self.spawns):
+            self.obstacles.add(self.create_obstacle())
+
+    def is_path_exists(self, matrix):
+        rows, cols = matrix.shape
+        visited = np.zeros_like(matrix, dtype=bool)
+
+        def dfs(r, c):
+            if r < 0 or c < 0 or r >= rows or c >= cols:  # Out of bounds
+                return False
+            if visited[r, c] or matrix[r, c] != 0:  # Already visited or not a 0
+                return False
+            if r == rows - 1 and c == cols - 1:  # Reached bottom-right corner
+                return True
+
+            visited[r, c] = True
+
+            # Explore neighbors (up, down, left, right)
+            return dfs(r + 1, c) or dfs(r - 1, c) or dfs(r, c + 1) or dfs(r, c - 1)
+
+        return dfs(0, 0)
 
     def _set_obstacle_position(self, obstacle_sprite):
-        # Randomly position the obstacle, ensuring no overlap
-        while True:
-            x_position, y_position = helpers.generate_random_position(
+        # Randomly position the obstacle, ensuring no overlap.
+
+        # Can be replaced with while True, this is used to prevent
+        # freezing when obstacle can be placed nowhere
+        for _ in range(200):
+            x_position, y_position = helpers.generate_random_grid_position(
                 self.screen, self.block_size
             )
+            grid_x, grid_y = (
+                x_position // self.block_size,
+                y_position // self.block_size,
+            )
+
+            temp_grid = self.grid.copy()
+            temp_grid[grid_x][grid_y] = 3
 
             if any(
                 obstacle_sprite.rect.colliderect(other_obstacle.rect)
@@ -178,8 +202,11 @@ class Obstacle(pygame.sprite.Sprite):
                 continue
             elif x_position == y_position and x_position in [750, 50]:
                 continue
+            elif not self.is_path_exists(matrix=temp_grid):
+                continue
             else:
                 obstacle_sprite.rect.center = (x_position, y_position)
+                self.grid[grid_x][grid_y] = 3
                 break
 
         return obstacle_sprite
@@ -188,95 +215,12 @@ class Obstacle(pygame.sprite.Sprite):
         # Draw all obstacles on the screen
         self.obstacles.draw(self.screen)
 
-    def update(self):
-        if self.env.truncation == self.env.truncation_limit:
-            # Initialize the obstacles group
-            self.obstacles = pygame.sprite.Group()
-
-            # Add stationary obstacles
-            self.obstacles.add(
-                self.create_stationary_obstacles()
-                for _ in range(self.stationary_spawn_amount)
-            )
-
-            # Add moving obstacles
-            self.obstacles.add(
-                self.create_moving_obstacles() for _ in range(self.moving_spawn_amount)
-            )
-
-        else:
-            for obstacle in self.obstacles:
-                if obstacle.moving:
-                    self.update_moving_obstacle(obstacle)
-
-    def update_moving_obstacle(self, obstacle):
-        rotate_flag = False
-        # Move obstacle
-        obstacle.rect.centerx, obstacle.rect.centery = helpers.transform_coordinates(
-            position=(obstacle.rect.centerx, obstacle.rect.centery),
-            angle=obstacle.angle,
-            steps=self.block_size,
-        )
-
-        # Check for collisions with other obstacles
-        if any(
-            obstacle.rect.colliderect(other_obstacle.rect)
-            for other_obstacle in self.obstacles
-            if other_obstacle != obstacle
-        ):
-            rotate_flag = True
-
-        # Check for out-of-bounds
-        if (
-            obstacle.rect.centerx < -50
-            or obstacle.rect.centerx > self.screen.get_width() + 50
-            or obstacle.rect.centery < -50
-            or obstacle.rect.centery > self.screen.get_height() + 50
-        ):
-            rotate_flag = True
-
-        if rotate_flag:
-            # Reverse the move and adjust direction
-            obstacle.rect.centerx, obstacle.rect.centery = (
-                helpers.transform_coordinates(
-                    position=(obstacle.rect.centerx, obstacle.rect.centery),
-                    angle=obstacle.angle,
-                    steps=-self.block_size,
-                )
-            )
-            obstacle = self.set_direction(obstacle)
-            obstacle.rect.centerx, obstacle.rect.centery = (
-                helpers.transform_coordinates(
-                    position=(obstacle.rect.centerx, obstacle.rect.centery),
-                    angle=obstacle.angle,
-                    steps=self.block_size,
-                )
-            )
-
-    def create_stationary_obstacles(self):
+    def create_obstacle(self):
         obstacle_sprite = pygame.sprite.Sprite()  # Create a new sprite
-        obstacle_sprite.image = self.stationary_obstacle_image
+        obstacle_sprite.image = self.image
         obstacle_sprite.rect = obstacle_sprite.image.get_rect()
         obstacle_sprite.moving = False
         return self._set_obstacle_position(obstacle_sprite)
-
-    def create_moving_obstacles(self):
-        obstacle_sprite = pygame.sprite.Sprite()
-        obstacle_sprite.image = self.moving_obstacle_image
-        obstacle_sprite.rect = obstacle_sprite.image.get_rect()
-        obstacle_sprite.moving = True
-        self.set_direction(obstacle_sprite)
-        return self._set_obstacle_position(obstacle_sprite)
-
-    def set_direction(self, obstacle):
-        possible_angles = [0, 90, 180, 270]
-        if hasattr(obstacle, "angle"):
-            possible_angles.remove(obstacle.angle)
-        obstacle.angle = random.choice(possible_angles)
-        obstacle.image, obstacle.rect = helpers.rotate_center(
-            self.moving_obstacle_image, obstacle.angle, obstacle.rect.center
-        )
-        return obstacle
 
 
 class CarEnv(Env):
@@ -320,13 +264,9 @@ class CarEnv(Env):
 
         self.obstacle = Obstacle(
             env=self,
-            stationary_obstacle_path=os.path.join(
-                "assets", "sprites", "traffic-cone.png"
-            ),
-            stationary_spawns=0,
-            moving_obstacle_path=os.path.join("assets", "sprites", "car-alter.png"),
-            moving_spawns=5,
+            spawns=20,
             block_size=100,
+            image_path=os.path.join("assets", "sprites", "traffic-cone.png"),
         )
 
         self.displacement_to_target = helpers.distance_between_points(
@@ -344,7 +284,6 @@ class CarEnv(Env):
     def step(self, action):
         self.truncation -= 1
         self.car.time_driving += 1
-        self.obstacle.update()
         reward = 0
 
         # previous_distance = helpers.distance_between_points(
@@ -453,7 +392,7 @@ class CarEnv(Env):
         pygame.display.flip()
         self.clock.tick(60)
 
-    def reset(self, seed=None):
+    def reset(self, seed=None, *args, **kwargs):
         self.done = False
         self.truncation = self.truncation_limit
 
@@ -470,6 +409,33 @@ class CarEnv(Env):
         sys.exit()
 
 
+class ClipTotalScoreWrapper(gym.Wrapper):
+    def __init__(self, env, min_total_score=-100, max_total_score=100):
+        super().__init__(env)
+        self.min_total_score = min_total_score
+        self.max_total_score = max_total_score
+        self.current_total_score = 0
+
+    def reset(self, **kwargs):
+        self.current_total_score = 0
+        return super().reset(**kwargs)
+
+    def step(self, action):
+        observation, reward, done, truncated, info = super().step(action)
+        self.current_total_score += reward
+
+        if done or truncated:
+            # Clip the total score of the episode
+            self.current_total_score = max(
+                self.min_total_score,
+                min(self.current_total_score, self.max_total_score),
+            )
+            info["total_score"] = self.current_total_score
+            self.current_total_score = 0  # Reset after episode end
+
+        return observation, reward, done, truncated, info
+
+
 if len(sys.argv) > 1:
     train = True
 else:
@@ -478,13 +444,14 @@ else:
 if train:
     env = CarEnv()
     check_env(env)
+    env = ClipTotalScoreWrapper(env)
 
     env = DummyVecEnv([lambda: env])
 
     try:
         model = PPO.load("ppo_car", env=env)
     except FileNotFoundError:
-        model = PPO("MlpPolicy", env, verbose=2, ent_coef=0.3)
+        model = PPO("MlpPolicy", env, verbose=2, ent_coef=0.6)
 
     timesteps = int(sys.argv[1]) * 100_000
     model.learn(total_timesteps=timesteps, progress_bar=True)

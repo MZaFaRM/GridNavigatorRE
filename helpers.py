@@ -59,6 +59,7 @@ def translate_human_input(event, previous_action):
 
     return action
 
+
 def move_human_input(action, position, speed):
     x, y = position
     if action[0] == 0:
@@ -71,6 +72,7 @@ def move_human_input(action, position, speed):
         y += speed
     return x, y
 
+
 def transform_coordinates(position, angle, steps):
     x, y = position
     x += steps * np.cos(np.radians(angle))
@@ -78,7 +80,7 @@ def transform_coordinates(position, angle, steps):
     return x, y
 
 
-def generate_random_position(screen, block_size):
+def generate_random_grid_position(screen, block_size):
     x_position = (
         random.randint(1, ((screen.get_width() // block_size) - 1)) * 100
     ) - 50
