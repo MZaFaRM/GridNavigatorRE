@@ -1,6 +1,7 @@
 import random
 import numpy as np
 import pygame
+from PIL import Image
 
 
 def aspect_scale_image(image, width=None, height=None):

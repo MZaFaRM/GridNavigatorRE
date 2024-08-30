@@ -224,7 +224,7 @@ class Obstacle(pygame.sprite.Sprite):
 
 
 class CarEnv(Env):
-    def __init__(self, seed=None, render_mode="human"):
+    def __init__(self, seed=None, render_mode="human", obstacles=5):
         screen_resolution = (800, 800)
 
         pygame.init()
@@ -240,10 +240,7 @@ class CarEnv(Env):
 
         # 1 added to use CnnPolicy and simulate the channel dimension
         self.observation_space = Box(
-            low=0,
-            high=3,
-            shape=(self.screen.get_width() // 100, self.screen.get_height() // 100),
-            dtype=np.float32,
+            low=0, high=4, shape=(8, 8), dtype=np.int8
         )
 
         self.done = False
@@ -264,7 +261,7 @@ class CarEnv(Env):
 
         self.obstacle = Obstacle(
             env=self,
-            spawns=20,
+            spawns=obstacles,
             block_size=100,
             image_path=os.path.join("assets", "sprites", "traffic-cone.png"),
         )
@@ -302,16 +299,6 @@ class CarEnv(Env):
         if not result:
             reward -= 10
 
-        # fmt: off
-        # out of bounds
-        if (
-            (self.car.rect.centerx < -50) or (self.car.rect.centerx > self.screen.get_width() + 50)
-            or (self.car.rect.centery < -50) or ( self.car.rect.centery > self.screen.get_height() + 50)
-            ):
-            self.done = True
-            reward = -100
-        # fmt: on
-
         # Check collision with obstacles using the sprite group
         if pygame.sprite.spritecollide(self.car, self.obstacle.obstacles, False):
             self.done = True
@@ -322,19 +309,6 @@ class CarEnv(Env):
             reward += 100
 
         else:
-            # # logic to reward based on distance to target
-            # new_distance = helpers.distance_between_points(
-            #     self.car.rect.center, self.target.rect.center
-            # )
-
-            # if previous_distance >= new_distance:
-            #     reward -= 20
-
-            # elif new_distance < previous_distance:
-            #     reward += 40
-
-            # for encouraging shorter path
-            # reward -= 10
             reward -= 2
 
             if self.truncation < 0:
@@ -369,18 +343,17 @@ class CarEnv(Env):
             self.map_to_grid(obstacle.rect.center)
             for obstacle in self.obstacle.obstacles
         ]
-        observation = self.observation_space.low.copy()
+        observation = np.zeros(shape=(8, 8), dtype=np.int8)
 
         # 1 - Car, 2 - Target, 3 - Obstacle
-        observation[car_x, car_y] = 1
-        observation[target_x, target_y] = 2
+        observation[car_x][car_y] = 1
+        observation[target_x][target_y] = 2
 
         for x, y in obstacle_positions:
             with contextlib.suppress(IndexError):
                 # Moving obstacles can sometimes move out of bounds
-                observation[x, y] = 3
+                observation[x][y] = 3
 
-        observation = np.transpose(observation)
         return observation
 
     def render(self):
@@ -392,7 +365,7 @@ class CarEnv(Env):
         pygame.display.flip()
         self.clock.tick(60)
 
-    def reset(self, seed=None, *args, **kwargs):
+    def reset(self, seed=None):
         self.done = False
         self.truncation = self.truncation_limit
 
@@ -409,33 +382,6 @@ class CarEnv(Env):
         sys.exit()
 
 
-class ClipTotalScoreWrapper(gym.Wrapper):
-    def __init__(self, env, min_total_score=-100, max_total_score=100):
-        super().__init__(env)
-        self.min_total_score = min_total_score
-        self.max_total_score = max_total_score
-        self.current_total_score = 0
-
-    def reset(self, **kwargs):
-        self.current_total_score = 0
-        return super().reset(**kwargs)
-
-    def step(self, action):
-        observation, reward, done, truncated, info = super().step(action)
-        self.current_total_score += reward
-
-        if done or truncated:
-            # Clip the total score of the episode
-            self.current_total_score = max(
-                self.min_total_score,
-                min(self.current_total_score, self.max_total_score),
-            )
-            info["total_score"] = self.current_total_score
-            self.current_total_score = 0  # Reset after episode end
-
-        return observation, reward, done, truncated, info
-
-
 if len(sys.argv) > 1:
     train = True
 else:
@@ -444,8 +390,6 @@ else:
 if train:
     env = CarEnv()
     check_env(env)
-    env = ClipTotalScoreWrapper(env)
-
     env = DummyVecEnv([lambda: env])
 
     try:
@@ -460,7 +404,7 @@ if train:
     del model
     del env
 
-env = CarEnv()
+env = CarEnv(obstacles=5)
 
 try:
     model = PPO.load("ppo_car", env=env)
@@ -479,7 +423,7 @@ for i in range(500):
     while not done:
         env.render()
 
-        action, _ = model.predict(obs, deterministic=True)
+        action, _ = model.predict(obs)
         obs, reward, terminated, truncated, info = env.step(action)
         score += reward
 
