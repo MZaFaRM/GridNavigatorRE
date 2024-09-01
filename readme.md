@@ -121,7 +121,9 @@ The project currently uses DQN as it is faster and due to the random nature of t
 
 Grass: https://ninjikin.itch.io/grass
 
+## Video
 
+[![Watch the video](https://img.youtube.com/vi/9ZXxLtQ6NJw/0.jpg)](https://www.youtube.com/watch?v=9ZXxLtQ6NJw)
 
 ## Conclusion
 
