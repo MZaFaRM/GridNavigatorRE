@@ -1,4 +1,4 @@
-# Project: Reinforcement Learning Agent Development
+# Project: Reinforcement Learning Grid Navigator
 
 ## Introduction
 
@@ -37,6 +37,10 @@ It's also provided with the time to truncation as the game also ends with a nega
 ```
 
 The environment around the agent is represented with the first 24 cells with 0 if it's free, 1 for target and 2 for obstacle 
+
+```py
+[ 1  0  1  0  0  0  0  1  0  1  0  0  0  0  0  1  1  0  0  0  1  1  0  0 25]
+```
 
 # Algorithm
 

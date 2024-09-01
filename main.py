@@ -1,3 +1,4 @@
+import os
 import sys
 
 from stable_baselines3 import DQN
@@ -20,18 +21,18 @@ def main():
         env.reset()
 
         try:
-            model = DQN.load("dqn_car", env=env)
+            model = DQN.load(os.path.join("model", "dqn_car"), env=env)
         except FileNotFoundError:
             model = DQN("MlpPolicy", env, verbose=2)
 
         timesteps = int(float(sys.argv[1]) * 100_000)
         model.learn(total_timesteps=timesteps, progress_bar=True)
-        model.save("dqn_car")
+        model.save(os.path.join("model", "dqn_car"))
 
     else:
-        env = CarEnv(obstacles_count=10, grid=False, training=False)
+        env = CarEnv(obstacles_count=20, grid=False, training=False)
         try:
-            model = DQN.load("dqn_car", env=env)
+            model = DQN.load(os.path.join("model", "dqn_car"), env=env)
         except FileNotFoundError:
             model = DQN("MlpPolicy", env, verbose=2)
 
@@ -40,16 +41,17 @@ def main():
         for i in range(100):
             done = False
             score = 0
-            obs, _ = env.reset(seed=i)
+            obs, _ = env.reset(seed=6)
             env.render()
 
             while not done:
 
                 action, _ = model.predict(obs, deterministic=True)
                 obs, reward, terminated, truncated, _ = env.step(action)
+                print(obs)
                 score += reward
 
-                time.sleep(0.25)
+                time.sleep(0.75)
 
                 if truncated or terminated:
                     done = True
