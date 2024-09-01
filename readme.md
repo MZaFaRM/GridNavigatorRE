@@ -1,10 +1,14 @@
 # Project: Reinforcement Learning Grid Navigator
 
+
+
 ## Introduction
 
 This is one of my first completed projects with reinforcement learning and it took quite some months and a lot of iterations to finally complete it. Nonetheless, I've learned a lot and looks forward to making more cool stuff. It was quite a ride tbh, albeit an interesting one. Here's some of the experience and points I've learned from this project for others reading it and more importantly for the future me.ar
 
 ## Project Overview
+
+![Game Play Gif](assets/readme/gameplay.gif)
 
 # Environment
 
@@ -38,9 +42,19 @@ It's also provided with the time to truncation as the game also ends with a nega
 
 The environment around the agent is represented with the first 24 cells with 0 if it's free, 1 for target and 2 for obstacle 
 
+An example observation space
+
 ```py
 [ 1  0  1  0  0  0  0  1  0  1  0  0  0  0  0  1  1  0  0  0  1  1  0  0 25]
 ```
+
+it's image representation 
+
+![Observation representation in 2D](assets/readme/observation.png)
+
+It's actual representation from the game
+
+![Game representation](assets/readme/observation-game.png)
 
 # Algorithm
 
