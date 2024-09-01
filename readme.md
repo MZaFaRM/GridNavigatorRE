@@ -50,11 +50,11 @@ An example observation space
 
 it's image representation 
 
-![Observation representation in 2D](assets/observation.png)
+![Observation representation in 2D](assets/readme/observation.png)
 
 It's actual representation from the game
 
-![Game representation](assets/observation-game.png)
+![Game representation](assets/readme/observation-game.png)
 
 # Algorithm
 
