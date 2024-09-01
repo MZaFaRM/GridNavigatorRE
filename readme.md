@@ -119,7 +119,7 @@ The project currently uses DQN as it is faster and due to the random nature of t
 
 ## Assets
 
-Grass: https://ninjikin.itch.io/grass
+Grass, Obstacle assets: https://ninjikin.itch.io/grass
 
 ## Video
 
