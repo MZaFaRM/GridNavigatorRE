@@ -6,10 +6,10 @@ import sys
 import math
 import helpers
 import random
-from gymnasium.spaces import Box, Discrete
+from gymnasium.spaces import MultiDiscrete, Discrete
 from stable_baselines3.common.env_checker import check_env
 from gymnasium import Env
-from stable_baselines3 import PPO
+from stable_baselines3 import DQN
 from stable_baselines3.common.vec_env import DummyVecEnv
 import sys
 import gymnasium as gym
@@ -181,8 +181,8 @@ class Obstacle(pygame.sprite.Sprite):
         # Randomly position the obstacle, ensuring no overlap.
 
         # Can be replaced with while True, this is used to prevent
-        # freezing when obstacle can be placed nowhere
-        for _ in range(200):
+        # freezing when obstacle can't be placed nowhere
+        for i in range(3_00_000):
             x_position, y_position = helpers.generate_random_grid_position(
                 self.screen, self.block_size
             )
@@ -232,18 +232,16 @@ class CarEnv(Env):
         self.clock = pygame.time.Clock()
 
         self.progress = 0  # 0%
-        self.truncation_limit = 50
+        self.truncation_limit = 30
         self.truncation = self.truncation_limit
 
         # 0 - Left, 1 - Right, 2 - Top, 3 - Bottom
         self.action_space = Discrete(4)
-
-        # 1 added to use CnnPolicy and simulate the channel dimension
-        self.observation_space = Box(
-            low=0, high=4, shape=(8, 8), dtype=np.int8
-        )
+        self.observation_space = MultiDiscrete([3] * 8 + [30 + 1])
 
         self.done = False
+
+        self.memory = set()
 
         if seed:
             random.seed(None)
@@ -253,6 +251,8 @@ class CarEnv(Env):
             car_path=os.path.join("assets", "sprites", "car.png"),
             block_size=100,
         )
+
+        self.memory.add(self.car.rect.center)
 
         self.target = Target(
             env=self,
@@ -296,23 +296,33 @@ class CarEnv(Env):
         elif action == 3:
             result = self.car.move_down()
 
+        # reward -= 0.1
+
         if not result:
-            reward -= 10
+            reward = -1
+            self.done = True
+
+        # if explored a new tile get reward
+        # Else gets negative reward - Promotes exploring
+        if self.car.rect.center in self.memory:
+            reward = -0.2
+        # else:
+        #     reward += 0.5
+
+        self.memory.add(self.car.rect.center)
 
         # Check collision with obstacles using the sprite group
         if pygame.sprite.spritecollide(self.car, self.obstacle.obstacles, False):
             self.done = True
-            reward -= 100
+            reward = -1
 
         elif pygame.sprite.spritecollide(self.car, [self.target], False):
+            reward = 5
             self.done = True
-            reward += 100
 
         else:
-            reward -= 2
-
             if self.truncation < 0:
-                reward -= 100
+                reward -= 10
                 self.done = True
                 self.truncation = 0
 
@@ -337,23 +347,35 @@ class CarEnv(Env):
         return x, y
 
     def _get_obs(self):
-        car_x, car_y = self.map_to_grid(self.car.rect.center)
-        target_x, target_y = self.map_to_grid(self.target.rect.center)
+        car_x, car_y = self.car.rect.center
         obstacle_positions = [
-            self.map_to_grid(obstacle.rect.center)
-            for obstacle in self.obstacle.obstacles
+            obstacle.rect.center for obstacle in self.obstacle.obstacles
         ]
-        observation = np.zeros(shape=(8, 8), dtype=np.int8)
+        # fmt: off
+        # Define the 8 surrounding positions
+        surrounding_positions = [
+            (car_x - 100, car_y - 100), (car_x, car_y - 100), (car_x + 100, car_y - 100),  # Top row
+            (car_x - 100, car_y      ),                       (car_x + 100, car_y      ),  # Middle row
+            (car_x - 100, car_y + 100), (car_x, car_y + 100), (car_x + 100, car_y + 100),  # Bottom row
+        ]
+        # fmt: on
 
-        # 1 - Car, 2 - Target, 3 - Obstacle
-        observation[car_x][car_y] = 1
-        observation[target_x][target_y] = 2
+        # Initialize the observation with zeros
+        observation = np.zeros(shape=(3, 3), dtype=np.int64)
+        screen_width, screen_height = self.screen.get_width(), self.screen.get_height()
 
-        for x, y in obstacle_positions:
-            with contextlib.suppress(IndexError):
-                # Moving obstacles can sometimes move out of bounds
-                observation[x][y] = 3
+        # Map surroundings to the grid
+        for i, (x, y) in enumerate(surrounding_positions):
+            if 0 <= x < screen_width and 0 <= y < screen_height:
+                if (x, y) == self.target.rect.center:
+                    observation[i // 3, i % 3] = 2  # Target
+                elif (x, y) in obstacle_positions:
+                    observation[i // 3, i % 3] = 1  # Obstacle
+            else:
+                observation[i // 3, i % 3] = 1  # Out of bounds ie: Edge, Obstacle
 
+        observation[2, 2] = self.truncation
+        observation = observation.flatten()
         return observation
 
     def render(self):
@@ -368,11 +390,14 @@ class CarEnv(Env):
     def reset(self, seed=None):
         self.done = False
         self.truncation = self.truncation_limit
+        self.memory = set()
 
         if seed:
             random.seed(seed)
 
         self.car.reset()
+        self.memory.add(self.car.rect.center)
+        
         self.target.reset()
         self.obstacle.reset()
         return (self._get_obs(), {})
@@ -382,34 +407,32 @@ class CarEnv(Env):
         sys.exit()
 
 
+env = CarEnv(obstacles=25)
+
 if len(sys.argv) > 1:
     train = True
 else:
     train = False
 
 if train:
-    env = CarEnv()
     check_env(env)
     env = DummyVecEnv([lambda: env])
 
     try:
-        model = PPO.load("ppo_car", env=env)
+        model = DQN.load("dqn_car", env=env)
     except FileNotFoundError:
-        model = PPO("MlpPolicy", env, verbose=2, ent_coef=0.6)
+        model = DQN("MlpPolicy", env, verbose=2)
 
     timesteps = int(sys.argv[1]) * 100_000
     model.learn(total_timesteps=timesteps, progress_bar=True)
-    model.save("ppo_car")
+    model.save("dqn_car")
 
     del model
-    del env
-
-env = CarEnv(obstacles=5)
 
 try:
-    model = PPO.load("ppo_car", env=env)
+    model = DQN.load("dqn_car", env=env)
 except FileNotFoundError:
-    model = PPO("MlpPolicy", env, verbose=2)
+    model = DQN("MlpPolicy", env, verbose=2)
 
 # print(evaluate_policy(model, env, n_eval_episodes=100, deterministic=True))
 
@@ -419,11 +442,12 @@ obs, info = env.reset()
 
 import time
 
-for i in range(500):
+for i in range(50):
+    truncations = []
     while not done:
         env.render()
 
-        action, _ = model.predict(obs)
+        action, _ = model.predict(obs, deterministic=True)
         obs, reward, terminated, truncated, info = env.step(action)
         score += reward
 
@@ -431,8 +455,11 @@ for i in range(500):
 
         if truncated or terminated:
             done = True
+            truncations.append(env.truncation)
 
     print(score)
     score = 0
     done = False
     obs, info = env.reset()
+
+print(sum(truncations) / len(truncations))
