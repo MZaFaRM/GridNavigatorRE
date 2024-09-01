@@ -3,3 +3,4 @@ log/
 *.zip
 
 __pycache__/
+.vscode/
