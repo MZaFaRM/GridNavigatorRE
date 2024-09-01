@@ -123,7 +123,7 @@ Grass: https://ninjikin.itch.io/grass
 
 ## Video
 
-[![Watch the video](https://img.youtube.com/vi/9ZXxLtQ6NJw/0.jpg)](https://www.youtube.com/watch?v=9ZXxLtQ6NJw)
+[![Watch the video](https://img.youtube.com/vi/isF4E8Fo4R4/0.jpg)](https://www.youtube.com/watch?v=isF4E8Fo4R4)
 
 ## Conclusion
 
