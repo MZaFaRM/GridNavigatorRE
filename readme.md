@@ -58,7 +58,7 @@ It's actual representation from the game
 
 # Algorithm
 
-The project currently uses DQN as it is faster and due to the random nature of the environment could benefit from it's off-policy nature through lack of biases when it comes to exploration, also DQN seemed to be faster than other good alternates like PPO; which is an on-policy algorithm. Cnn seemed like a good policy for this project due to the observation space being a grid but it was too slow, perhaps I will try it some other time. Hence, the project used MlpPolicy.
+The project currently uses DQN due to the random nature of the environment, as it could benefit from it's off-policy nature through lack of biases when it comes to exploration, also DQN seemed to be faster than other good alternates like PPO; which is an on-policy algorithm. Cnn seemed like a good policy for this project due to the observation space being a grid but it was too slow, perhaps I will try it some other time. Hence, the project used MlpPolicy.
 
 ## Key Takeaways
 
@@ -114,8 +114,8 @@ The project currently uses DQN as it is faster and due to the random nature of t
 
 10. **Final Progress:**
 
-- Agent seems to have made very good progress, completing at least 1 in 20 games successfully, so currently ending the project here.
-- Will probably come back to this project at a later date if I learn to increase the win rate. But as of yet can't really make much progress.
+   - Agent seems to have made very good progress, completing at least 1 in 20 games successfully, so currently ending the project here.
+   - Will probably come back to this project at a later date if I learn to increase the win rate. But as of yet can't really make much progress.
 
 ## Assets
 
