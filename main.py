@@ -48,10 +48,9 @@ def main():
 
                 action, _ = model.predict(obs, deterministic=True)
                 obs, reward, terminated, truncated, _ = env.step(action)
-                print(obs)
                 score += reward
 
-                time.sleep(0.75)
+                time.sleep(0.50)
 
                 if truncated or terminated:
                     done = True
