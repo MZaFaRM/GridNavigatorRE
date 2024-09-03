@@ -30,7 +30,7 @@ def main():
         model.save(os.path.join("model", "dqn_car"))
 
     else:
-        env = CarEnv(obstacles_count=20, grid=False, training=False)
+        env = CarEnv(obstacles_count=15, grid=False, training=False)
         try:
             model = DQN.load(os.path.join("model", "dqn_car"), env=env)
         except FileNotFoundError:
@@ -41,16 +41,17 @@ def main():
         for i in range(100):
             done = False
             score = 0
-            obs, _ = env.reset(seed=6)
+            obs, _ = env.reset(seed=i)
             env.render()
 
             while not done:
 
                 action, _ = model.predict(obs, deterministic=True)
                 obs, reward, terminated, truncated, _ = env.step(action)
+                print(obs)
                 score += reward
 
-                time.sleep(0.50)
+                time.sleep(0.25)
 
                 if truncated or terminated:
                     done = True
