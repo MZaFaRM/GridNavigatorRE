@@ -91,20 +91,12 @@ class Target(pygame.sprite.Sprite):
         self.image = pygame.image.load(target_image_path).convert_alpha()
         self.image = helpers.aspect_scale_image(self.image, 70)
 
-        # Set the initial position
-        self.update()
-
     def reset(self, seed=None):
         if seed:
             random.seed(seed)
 
-        self.update()
-
-    def update(self):
-        # Set target's position and update its rect
         self.position = (self.screen.get_width() - 50, self.screen.get_height() - 50)
         self.rect = self.image.get_rect(center=self.position)
-        return self.position
 
     def render(self):
         # Render the target on the screen

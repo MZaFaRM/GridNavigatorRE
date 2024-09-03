@@ -41,7 +41,7 @@ def main():
         for i in range(100):
             done = False
             score = 0
-            obs, _ = env.reset(seed=i)
+            obs, _ = env.reset(seed=i+1)
             env.render()
 
             while not done:

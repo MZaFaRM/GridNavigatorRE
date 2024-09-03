@@ -43,12 +43,6 @@ class CarEnv(Env):
         # stores all locations already visited, used to promote exploring
         self.memory = set()
 
-        self.level = random.randint(0, 999)
-
-        if seed:
-            random.seed(None)
-            self.level = seed
-
         self.car = Car(env=self, block_size=100)
         self.target = Target(env=self)
         self.obstacle = Obstacle(env=self, spawns=obstacles_count, block_size=100)
@@ -60,6 +54,11 @@ class CarEnv(Env):
             self.background = self.draw_background()
 
         self.grid = grid
+
+        if seed:
+            self.reset(seed=seed)
+        else:
+            self.reset()
 
     def draw_background(self):
         background_image_path = os.path.join("assets", "images", "bg-tile.png")
@@ -189,7 +188,7 @@ class CarEnv(Env):
         self.target.render()
         self.obstacle.render()
 
-        text_surface = self.font.render(f"Seed  {self.level}", True, (255, 255, 255))
+        text_surface = self.font.render(f"Seed  {self.seed}", True, (255, 255, 255))
         text_rect = text_surface.get_rect(center=(600, 50))
         self.screen.blit(text_surface, text_rect)
 
@@ -201,16 +200,15 @@ class CarEnv(Env):
         self.truncation = self.truncation_limit
         self.memory = set()
 
-        self.level = random.randint(0, 999)
-        if seed:
-            random.seed(seed)
-            self.level = seed
+        self.seed = seed or random.randint(0, 999)
 
-        self.car.reset()
+        random.seed(seed)
+        self.car.reset(seed=self.seed)
+        self.target.reset(seed=self.seed)
+        self.obstacle.reset(seed=self.seed)
+
         self.memory.add(self.car.rect.center)
 
-        self.target.reset()
-        self.obstacle.reset()
         return (self._get_obs(), {})
 
     def close(self):
