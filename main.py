@@ -48,7 +48,6 @@ def main():
 
                 action, _ = model.predict(obs, deterministic=True)
                 obs, reward, terminated, truncated, _ = env.step(action)
-                print(obs)
                 score += reward
 
                 time.sleep(0.25)
@@ -57,9 +56,6 @@ def main():
                     done = True
 
                 env.render()
-
-            if score < 4:
-                print(i, score)
 
 
 main()
