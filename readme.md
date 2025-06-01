@@ -4,7 +4,7 @@
 
 ## Introduction
 
-This is one of my first completed projects with reinforcement learning and it took quite some months and a lot of iterations to finally complete it. Nonetheless, I've learned a lot and looks forward to making more cool stuff. It was quite a ride tbh, albeit an interesting one. Here's some of the experience and points I've learned from this project for others reading it and more importantly for the future me.ar
+This is one of my first completed projects with reinforcement learning and it took quite some months and a lot of iterations to finally complete it. Nonetheless, I've learned a lot and looks forward to making more cool stuff. It was quite a ride tbh, albeit an interesting one. Here's some of the experience and points I've learned from this project for others reading it and more importantly for the future me.
 
 ## Project Overview
 
